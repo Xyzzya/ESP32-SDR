@@ -1,0 +1,56 @@
+# ESP32-S3 SDR Receiver — SDK Configuration Defaults
+# All noise-generating peripherals disabled for clean RF reception.
+
+# --- WiFi / BT / PHY (disabled to eliminate RF noise) ---
+# Primary WiFi disable (v5.x)
+CONFIG_ESP_WIFI_ENABLED=n
+# Legacy WiFi disable (v4.x compat, belt-and-suspenders)
+CONFIG_ESP32_WIFI_ENABLED=n
+# Ensure SoftAP is also off (prevents auto-creation of AP netif)
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+# Bluetooth
+CONFIG_BT_ENABLED=n
+# PHY calibration — none at boot, no calibration data storage
+CONFIG_ESP_PHY_RF_CAL_NONE=y
+CONFIG_ESP_PHY_CALIBRATION_AND_DATA_STORAGE=n
+CONFIG_ESP32_PHY_CALIBRATION_AND_DATA_STORAGE=n
+
+# --- CPU & Flash (lower clocks = less RF harmonics) ---
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_80=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+
+# --- USB ---
+CONFIG_TINYUSB=y
+CONFIG_TINYUSB_CDC_ENABLED=y
+CONFIG_TINYUSB_CDC_COUNT=1
+
+# --- I2S ---
+CONFIG_SOC_I2S_SUPPORTED=y
+
+# --- I2C ---
+CONFIG_SOC_I2C_SUPPORTED=y
+
+# --- FreeRTOS ---
+CONFIG_FREERTOS_HZ=1000
+
+# --- Task Watchdog ---
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+
+# --- USB PHY ---
+CONFIG_USB_OTG_SUPPORTED=y
+
+# --- Log Level ---
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3
+
+# --- USB Serial/JTAG (disabled — conflicts with USB OTG for TinyUSB) ---
+CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=n
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED=n
+
+# --- Flash ---
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_PARTITION_TABLE_SINGLE_APP=y
+
+# --- PSRAM ---
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
