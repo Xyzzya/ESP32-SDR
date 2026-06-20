@@ -327,7 +327,3 @@ The critical quadrature relationship is achieved through the Si5351's phase offs
 - **WiFi re-enabled by ESP-IDF Kconfig:** The `check_wifi.py` pre-build script (configured in `platformio.ini` as `extra_scripts`) automatically patches the ESP-IDF WiFi Kconfig to default WiFi off. This ensures no RF noise from the WiFi/BT radios. If you see WiFi-related build warnings or if the build fails due to Kconfig issues, check that the patch was applied (`check_wifi.py: PATCHED ...` appears in build output). Reinstalling the ESP-IDF framework (`pio pkg update`) may require the patch to be re-applied on the next build.
 - **USB audio capture fails with Python:** `test_usb.py` may time out on Windows due to WASAPI exclusive-mode limitations with UAC2 devices. This does not indicate a firmware problem — use HDSDR or SDR# for full audio testing, as they use the standard Windows audio APIs (MME/WDM-KS) which handle UAC2 correctly.
 - **Buffer drops (drops > 0 in stats):** Indicates the USB host is not consuming audio data fast enough. Try reducing host CPU load, closing other USB devices on the same controller, or using a direct USB port (not a hub).
-
-## License
-
-[Specify license here]
