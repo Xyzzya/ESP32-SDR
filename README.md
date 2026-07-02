@@ -334,7 +334,7 @@ The Si5351 output frequency is set to exactly the **1× receive frequency** beca
 
 ## Notes
 
-Works with strong signals; will struggle on weak ones. If you want better performance, I suggest using FST3253 for the switcher, a better RF Frontend, better op-amp, and better biasing. I've done the RF side on an etched copper-clad board. Check Schematics/Demo for a performance demo.
+Works with strong signals; will struggle on weak ones. If you want better performance, I suggest using FST3253 for the switcher/mux, a better RF frontend, better op-amp, and better biasing. I've done the RF side on an etched copper-clad board. Check Schematics/Demo for a performance demo.
 
 ## License
 
