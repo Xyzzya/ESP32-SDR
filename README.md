@@ -332,6 +332,10 @@ The Si5351 output frequency is set to exactly the **1× receive frequency** beca
 - **USB audio capture fails with Python:** `test_usb.py` may time out on Windows due to WASAPI exclusive-mode limitations with UAC2 devices. This does not indicate a firmware problem — use HDSDR or SDR# for full audio testing, as they use the standard Windows audio APIs (MME/WDM-KS) which handle UAC2 correctly.
 - **Buffer drops (drops > 0 in stats):** Indicates the USB host is not consuming audio data fast enough. Try reducing host CPU load, closing other USB devices on the same controller, or using a direct USB port (not a hub).
 
+## Notes
+
+Works with strong signals; will struggle on weak ones. If you want better performance, I suggest using FST3253 for the switcher, a better RF Frontend, better op-amp, and better biasing. I've done the RF side on an etched copper-clad board. Check Schematics/Demo for a performance demo.
+
 ## License
 
 This project is licensed under the MIT License.
