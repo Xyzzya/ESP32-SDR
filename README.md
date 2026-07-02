@@ -334,11 +334,21 @@ The Si5351 output frequency is set to exactly the **1× receive frequency** beca
 
 ## Notes
 
-Works with strong signals; will struggle on weak ones. If you want better performance, I suggest using FST3253 for the switcher/mux, a better RF frontend, better op-amp, and better biasing. I've done the RF side on an etched copper-clad board. Check Schematics/Demo for a performance demo.
+Works with strong signals; will struggle on weak ones. If you want better performance, I suggest using FST3253 for the switcher/mux, a better RF frontend, better op-amp, and better biasing. I've done the RF side on an etched copper-clad board.
 
 Software may be bug-laden. I did my best to diagnose and debug.
 
 LLMs used: DeepSeek V4 Pro, Gemini 3.1 Pro, and Claude Opus 4.6
+
+## Demo
+
+
+
+https://github.com/user-attachments/assets/525b316a-7277-4892-81d7-3af65f93265f
+
+
+
+
 
 ## License
 
