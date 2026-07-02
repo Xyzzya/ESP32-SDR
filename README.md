@@ -342,7 +342,7 @@ LLMs used: DeepSeek V4 Pro, Gemini 3.1 Pro, and Claude Opus 4.6
 
 ## Demo
 
-
+1 minute demo on NHK World Radio 11.815MHz (25m band)
 
 https://github.com/user-attachments/assets/525b316a-7277-4892-81d7-3af65f93265f
 
