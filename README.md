@@ -2,6 +2,8 @@
 
 A Software Defined Radio receiver firmware for the ESP32-S3 microcontroller. Uses a Si5351 quadrature local oscillator, 74HC4052 Tayloe mixer, and PCM1808 I2S ADC. Streams digitized I/Q baseband audio to a host PC over USB as a standard USB Audio Class 2.0 (UAC2) microphone — no virtual audio cables or Python bridges required.
 
+> **Architecture note:** The 74HC4052 Tayloe quadrature sampling detector typically requires a switching clock at 4× the receive frequency. However, in this design, the Si5351 uses its phase offset registers to natively generate two 90° shifted clocks (CLK0 and CLK1) at the **1× receive frequency**. These directly drive the S0/S1 select lines, generating a 2-bit Gray code (00→01→11→10) that cycles the multiplexer through all four phases once per RF cycle.
+
 ## System Overview
 
 ```
@@ -118,7 +120,7 @@ The firmware uses an SDRshield-compatible command protocol over the USB CDC seri
 
 > **Note:** LO outputs auto-enable when the host starts USB audio streaming and auto-disable when the host stops. Manual `A 0`/`A 1` overrides during an active stream are also respected.
 
-**Frequency range:** 330 kHz to 150 MHz. The default LO frequency is 11.052 MHz (test transmitter reference).
+**Frequency range:** 333 kHz to 150 MHz (receive frequency). The Si5351 generates quadrature signals natively at the exact receive frequency. The default LO frequency is 11.059 MHz.
 
 **Example session:**
 ```
@@ -296,7 +298,7 @@ The audio task runs on core 1 for low latency (core 0 handles USB and the comman
 
 | Define | Default | Description |
 |--------|---------|-------------|
-| `DEFAULT_LO_FREQ_HZ` | 11052000 | Startup LO frequency (11.052 MHz) |
+| `DEFAULT_LO_FREQ_HZ` | 11059000 | Startup receive frequency (11.059 MHz beacon). |
 | `SI5351_XTAL_CORRECTION` | 0L | Crystal frequency correction in 0.01 Hz units (calibrate per-module) |
 | `I2S_SAMPLE_RATE` | 48000 | Audio sample rate |
 | `USB_AUDIO_SAMPLE_RATE` | 48000 | USB audio sample rate |
@@ -308,7 +310,9 @@ The receiver uses a **Tayloe quadrature sampling detector** — a proven design 
 
 The ESP32-S3 reads the PCM1808 as an I2S master at 48 kHz and exposes the I/Q stream as a standard USB Audio Class 2.0 microphone. The host PC treats it like any other audio input device — no special drivers or software bridges needed. Frequency control uses a separate CDC serial interface on the same USB cable, supporting standard SDRshield-compatible commands as well as Omni-Rig / EasySDR `FREQ,<Hz>` format.
 
-The critical quadrature relationship is achieved through the Si5351's phase offset register: CLK0 is programmed with a phase offset equal to the multisynth divider value, producing a 90-degree delay relative to CLK1 at the output frequency.
+The critical quadrature relationship is achieved through the Si5351's phase offset register: CLK1 is programmed with a phase offset equal to the multisynth divider value, producing a 90-degree delay relative to CLK0 at the output frequency. This makes CLK0 (I channel) lead CLK1 (Q channel) by 90°.
+
+The Si5351 output frequency is set to exactly the **1× receive frequency** because the 74HC4052's two select lines (S0=CLK0, S1=CLK1) natively form a Gray code that cycles through all four multiplexer states once per RF period, producing the required 0°/90°/180°/270° commutation without a 4× multiplier.
 
 ### Key Behaviors
 
@@ -327,3 +331,31 @@ The critical quadrature relationship is achieved through the Si5351's phase offs
 - **WiFi re-enabled by ESP-IDF Kconfig:** The `check_wifi.py` pre-build script (configured in `platformio.ini` as `extra_scripts`) automatically patches the ESP-IDF WiFi Kconfig to default WiFi off. This ensures no RF noise from the WiFi/BT radios. If you see WiFi-related build warnings or if the build fails due to Kconfig issues, check that the patch was applied (`check_wifi.py: PATCHED ...` appears in build output). Reinstalling the ESP-IDF framework (`pio pkg update`) may require the patch to be re-applied on the next build.
 - **USB audio capture fails with Python:** `test_usb.py` may time out on Windows due to WASAPI exclusive-mode limitations with UAC2 devices. This does not indicate a firmware problem — use HDSDR or SDR# for full audio testing, as they use the standard Windows audio APIs (MME/WDM-KS) which handle UAC2 correctly.
 - **Buffer drops (drops > 0 in stats):** Indicates the USB host is not consuming audio data fast enough. Try reducing host CPU load, closing other USB devices on the same controller, or using a direct USB port (not a hub).
+
+## License
+
+This project is licensed under the MIT License.
+
+```
+MIT License
+
+Copyright (c) 2026
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

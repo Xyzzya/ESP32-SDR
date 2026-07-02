@@ -47,14 +47,16 @@ static uint8_t  s_lolb_mask = 0x80;      // LOL_B bit: 0x40 for A, 0x80 for B/C
 #define SI5351_REG_PLLB_BASE       34    // Registers 34–41 for PLLB
 #define SI5351_REG_MS0_BASE        42    // Registers 42–49 for Multisynth 0
 #define SI5351_REG_MS1_BASE        50    // Registers 50–57 for Multisynth 1
+#define SI5351_REG_MS2_BASE        58    // Registers 58–65 for Multisynth 2
 #define SI5351_REG_CLK0_PHASE      165
 #define SI5351_REG_CLK1_PHASE      166
+#define SI5351_REG_CLK2_PHASE      167
 #define SI5351_REG_PLL_RESET       177
 #define SI5351_REG_PLL_INPUT_SRC   15
 #define SI5351_REG_XTAL_CL         183
 #define SI5351_PLL_SRC_XO          0x00
-#define SI5351_PLL_SRC_PLLB_XO     (0 << 3)
-#define SI5351_PLL_SRC_PLLA_XO     (0 << 2)
+// Reg 177 PLL reset: bit 7 = PLLB_RST (0x80), bit 5 = PLLA_RST (0x20)
+// Matches Si5351 AN619 and Etherkit si5351arduino library definitions.
 
 // --- Crystal parameters ---
 #define SI5351_XTAL_FREQ        25000000ULL   // 25 MHz crystal
@@ -165,22 +167,20 @@ static uint32_t calc_even_divider(uint32_t output_freq_hz) {
     if (output_freq_hz == 0) return 0;
 
     uint32_t ideal_div = 900000000UL / output_freq_hz;
-    if (ideal_div & 1) ideal_div++;
+    if (ideal_div & 1) ideal_div--;  // Round DOWN to even (avoids exceeding VCO max)
     if (ideal_div < 6) ideal_div = 6;
     if (ideal_div > 1800) ideal_div = 1800;
 
     // Walk down if VCO exceeds 900 MHz
-    while (1) {
+    while (ideal_div > 6) {
         uint64_t vco = (uint64_t)output_freq_hz * ideal_div;
         if (vco <= 900000000ULL) break;
-        if (ideal_div <= 6) break;
         ideal_div -= 2;
     }
     // Walk up if VCO is below 600 MHz
-    while (1) {
+    while (ideal_div < 1800) {
         uint64_t vco = (uint64_t)output_freq_hz * ideal_div;
         if (vco >= 600000000ULL) break;
-        if (ideal_div >= 1800) break;
         ideal_div += 2;
     }
 
@@ -250,18 +250,21 @@ bool si5351_quad_init(uint32_t lo_freq_hz) {
     // Ensure both PLLs use XO as reference (reg 15: PLLA_SRC=0, PLLB_SRC=0)
     si5351_write_reg(SI5351_REG_PLL_INPUT_SRC, SI5351_PLL_SRC_XO);
 
-    // Power down CLK2..CLK7 (not used) — write 0x80 (PDN=1) to each ctrl reg
-    for (uint8_t clk = 2; clk <= 7; clk++) {
+    // Power down CLK3..CLK7 (not used) — write 0x80 (PDN=1) to each ctrl reg
+    for (uint8_t clk = 3; clk <= 7; clk++) {
         si5351_write_reg(SI5351_REG_CLK2_CTRL + (clk - 2), 0x80);
     }
 
-    // Configure CLK0: PLLB source, 2mA drive, integer mode, MS source
-    // Register 16: [7]=PDN [6]=MS_INT [5]=PLL_SRC [4:3]=IDRV [2]=INV [1:0]=CLK_SRC
-    // CLK_PDN=0, MS_INT=1, PLLB=1, IDRV=00(2mA), INV=0, CLK_SRC=11(MSn)
-    si5351_write_reg(SI5351_REG_CLK0_CTRL, 0x63);  // 0b01100011
+    // Configure CLK0: PLLB source, 6mA drive, integer mode, MS source
+    // Register 16: [7]=PDN [6]=MS_INT [5]=PLL_SRC [4]=INV [3:2]=CLK_SRC [1:0]=IDRV
+    // CLK_PDN=0, MS_INT=1, PLLB=1, INV=0, CLK_SRC=11(MSn), IDRV=10(6mA)
+    si5351_write_reg(SI5351_REG_CLK0_CTRL, 0x6E);  // 0b01101110
 
     // Configure CLK1 identically
-    si5351_write_reg(SI5351_REG_CLK1_CTRL, 0x63);  // 0b01100011
+    si5351_write_reg(SI5351_REG_CLK1_CTRL, 0x6E);  // 0b01101110
+
+    // Power down CLK2 (not used — frequency counter removed)
+    si5351_write_reg(SI5351_REG_CLK2_CTRL, 0x80);  // PDN=1
 
     // Set initial LO frequency with quadrature
     if (!si5351_quad_set_freq(lo_freq_hz)) {
@@ -271,15 +274,21 @@ bool si5351_quad_init(uint32_t lo_freq_hz) {
     // Enable CLK0 and CLK1 outputs
     si5351_quad_enable(true);
 
-    ESP_LOGI(TAG, "Si5351 initialized: LO = %lu Hz, quadrature on CLK0/CLK1", lo_freq_hz);
+    ESP_LOGI(TAG, "Si5351 initialized: LO = %lu Hz, quadrature on CLK0/CLK1, CLK2 off", lo_freq_hz);
     return true;
 }
 
 bool si5351_quad_set_freq(uint32_t lo_freq_hz) {
     if (lo_freq_hz < MIN_LO_FREQ_HZ || lo_freq_hz > MAX_LO_FREQ_HZ) {
-        ESP_LOGE(TAG, "Frequency %lu Hz out of range", lo_freq_hz);
+        ESP_LOGE(TAG, "Receive frequency %lu Hz out of range [%lu, %lu]",
+                 lo_freq_hz, (uint32_t)MIN_LO_FREQ_HZ, (uint32_t)MAX_LO_FREQ_HZ);
         return false;
     }
+
+    // Si5351 CLK0 and CLK1 drive S0/S1 of the 74HC4052 directly (no Johnson
+    // counter). Two quadrature square waves at frequency F produce the full
+    // Gray code sequence (00→01→11→10) once per period, so the MUX cycles
+    // through all 4 phases at F.  No ×4 multiplier is needed.
 
     // Calculate even-integer multisynth divider
     uint32_t divider = calc_even_divider(lo_freq_hz);
@@ -301,11 +310,12 @@ bool si5351_quad_set_freq(uint32_t lo_freq_hz) {
     uint64_t remainder = vco_100 - (uint64_t)a * xtal_freq_100;
     uint32_t b = (uint32_t)((remainder * c_denom) / xtal_freq_100);
 
-    ESP_LOGI(TAG, "freq=%lu div=%lu VCO=%llu a=%lu b=%lu c=%lu",
+    ESP_LOGI(TAG, "freq=%lu Hz  div=%lu  VCO=%llu  a=%lu b=%lu c=%lu",
              lo_freq_hz, divider, vco_freq, a, b, c_denom);
 
     if (vco_freq < 600000000ULL || vco_freq > 900000000ULL) {
-        ESP_LOGW(TAG, "VCO %llu Hz out of Si5351 spec [600–900 MHz]; PLL may be unstable", vco_freq);
+        ESP_LOGW(TAG, "VCO %llu Hz out of Si5351 spec [600–900 MHz] for freq=%lu Hz",
+                 vco_freq, lo_freq_hz);
     }
 
     // Program PLLB with feedback divider a + b/c
@@ -326,9 +336,14 @@ bool si5351_quad_set_freq(uint32_t lo_freq_hz) {
         ESP_LOGE(TAG, "I2C write MS1 params failed: %s", esp_err_to_name(wr_err));
         return false;
     }
+    // CLK2 powered down — no MS2 programming needed
 
-    // Set CLK1 phase offset = divider (gives 90° at output, CLK0 leads).
-    // Phase register is 7 bits; warn if divider exceeds 127 (quadrature degraded).
+    // Set CLK0 phase offset = 0 (reference), CLK1 phase offset = divider.
+    // Delaying CLK1 by 'divider' VCO cycles produces 90° lag → CLK0 leads CLK1.
+    // Phase register is 7 bits (max 127). With direct quadrature drive (no
+    // ÷4 counter), the divider can exceed 127 at lower frequencies.
+    // Below 900 MHz / 127 ≈ 7.09 MHz, quadrature angle degrades.
+    // Image rejection decreases but direct-conversion reception still works.
     uint8_t phase_val;
     if (divider <= 127) {
         phase_val = (uint8_t)divider;
@@ -341,18 +356,17 @@ bool si5351_quad_set_freq(uint32_t lo_freq_hz) {
     }
     si5351_write_reg(SI5351_REG_CLK0_PHASE, 0);
     si5351_write_reg(SI5351_REG_CLK1_PHASE, phase_val);
+    // CLK2 powered down — no phase programming needed
 
     // Reset PLLB to apply new frequency and phase relationship.
-    // Per Si5351 AN619: assert the reset bit, then release it.
-    // The hardware does NOT auto-clear — the host must write 0 to release.
+    // Register 177: bit 7 = PLLB reset (0x80), bit 5 = PLLA reset (0x20).
+    // We use PLLB → write 0x80. Register is self-clearing (per AN619 + Etherkit lib).
+    // DO NOT write 0x00 after — it is a no-op but unnecessary.
+    // Both CLK0 and CLK1 derive from PLLB, so this single reset synchronises
+    // them simultaneously, establishing the grey-code phase relationship.
     wr_err = si5351_write_reg(SI5351_REG_PLL_RESET, 0x80);
     if (wr_err != ESP_OK) {
-        ESP_LOGE(TAG, "I2C write PLL reset assert failed: %s", esp_err_to_name(wr_err));
-        return false;
-    }
-    wr_err = si5351_write_reg(SI5351_REG_PLL_RESET, 0x00);
-    if (wr_err != ESP_OK) {
-        ESP_LOGE(TAG, "I2C write PLL reset release failed: %s", esp_err_to_name(wr_err));
+        ESP_LOGE(TAG, "I2C write PLL reset failed: %s", esp_err_to_name(wr_err));
         return false;
     }
 
@@ -385,37 +399,38 @@ bool si5351_quad_set_freq(uint32_t lo_freq_hz) {
             break;
         }
     }
-    if (pll_locked) {
-        current_lo_freq = lo_freq_hz;
-        ESP_LOGI(TAG, "PLLB locked: freq=%lu Hz div=%lu VCO=%llu a=%lu b=%lu c=%lu",
-                 lo_freq_hz, divider, vco_freq, a, b, c_denom);
+    current_lo_freq = lo_freq_hz;
 
-        // Read-back verify: confirm PLLB and MS0 registers were written
-        uint8_t verify[8];
-        if (si5351_read_reg(SI5351_REG_PLLB_BASE, &verify[0]) == ESP_OK) {
-            uint8_t expected_p3_hi = (uint8_t)((c_denom >> 8) & 0xFF);
-            if (verify[0] != expected_p3_hi) {
-                ESP_LOGW(TAG, "PLLB reg readback mismatch: wrote 0x%02X, read 0x%02X",
-                         expected_p3_hi, verify[0]);
-            } else {
-                ESP_LOGI(TAG, "PLLB readback OK (reg34=0x%02X)", verify[0]);
-            }
-        }
-        if (si5351_read_reg(SI5351_REG_MS0_BASE + 3, &verify[3]) == ESP_OK) {
-            uint8_t expected_p1_mid = (uint8_t)(((128 * divider - 512) >> 8) & 0xFF);
-            if (verify[3] != expected_p1_mid) {
-                ESP_LOGW(TAG, "MS0 reg readback mismatch: wrote 0x%02X, read 0x%02X",
-                         expected_p1_mid, verify[3]);
-            } else {
-                ESP_LOGI(TAG, "MS0 readback OK (reg45=0x%02X)", verify[3]);
-            }
-        }
-    } else {
-        ESP_LOGW(TAG, "PLLB did not lock within ~55ms — registers programmed, PLL may lock shortly (freq=%lu Hz div=%lu VCO=%llu)",
+    if (pll_locked) {
+        ESP_LOGI(TAG, "PLLB locked: freq=%lu Hz  div=%lu  VCO=%llu",
                  lo_freq_hz, divider, vco_freq);
+    } else {
+        ESP_LOGW(TAG, "PLLB lock not confirmed within ~55ms — registers programmed, continuing (freq=%lu Hz)",
+                 lo_freq_hz);
     }
 
-    return pll_locked;
+    // Read-back verify: confirm PLLB and MS0 registers were written
+    uint8_t verify[8];
+    if (si5351_read_reg(SI5351_REG_PLLB_BASE, &verify[0]) == ESP_OK) {
+        uint8_t expected_p3_hi = (uint8_t)((c_denom >> 8) & 0xFF);
+        if (verify[0] != expected_p3_hi) {
+            ESP_LOGW(TAG, "PLLB reg readback mismatch: wrote 0x%02X, read 0x%02X",
+                     expected_p3_hi, verify[0]);
+        } else {
+            ESP_LOGI(TAG, "PLLB readback OK (reg34=0x%02X)", verify[0]);
+        }
+    }
+    if (si5351_read_reg(SI5351_REG_MS0_BASE + 3, &verify[3]) == ESP_OK) {
+        uint8_t expected_p1_mid = (uint8_t)(((128 * divider - 512) >> 8) & 0xFF);
+        if (verify[3] != expected_p1_mid) {
+            ESP_LOGW(TAG, "MS0 reg readback mismatch: wrote 0x%02X, read 0x%02X",
+                     expected_p1_mid, verify[3]);
+        } else {
+            ESP_LOGI(TAG, "MS0 readback OK (reg45=0x%02X)", verify[3]);
+        }
+    }
+
+    return true;
 }
 
 uint32_t si5351_quad_get_freq(void) {
@@ -430,7 +445,7 @@ bool si5351_quad_enable(bool enabled) {
         return false;
     }
     if (enabled) {
-        val &= ~0x03;  // Enable CLK0, CLK1 (active low)
+        val &= ~0x03;  // Enable CLK0, CLK1 (active low); CLK2 stays disabled
     } else {
         val |= 0x03;   // Disable CLK0, CLK1
     }

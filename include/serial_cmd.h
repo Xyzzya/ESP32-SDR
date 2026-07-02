@@ -3,8 +3,7 @@
 // Serial Command Parser (ESP-IDF / TinyUSB CDC)
 //
 // Handles frequency control commands over USB CDC serial.
-// Compatible with the original SDRshield2_0 protocol and the Web Serial
-// control interface.
+// Compatible with the original SDRshield2_0 protocol.
 //
 // Commands (terminated by CR/LF):
 //   f <freq_hz>    — Set VFO to exact frequency in Hz

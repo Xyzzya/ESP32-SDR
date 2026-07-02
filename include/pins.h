@@ -30,18 +30,24 @@
 
 // --- Si5351 Clock Assignments ---
 // CLK0 + CLK1: Quadrature LO pair → 74HC4052 select lines (Gray code)
-// CLK2: PCM1808 master clock (NOT used — ESP32 MCLK output instead)
+// CLK2: Disabled (powered down)
 #define SI5351_CLK0         0
 #define SI5351_CLK1         1
+#define SI5351_CLK2         2
 #define SI5351_CLK_LO_I     SI5351_CLK0   // 0° (I channel LO)
 #define SI5351_CLK_LO_Q     SI5351_CLK1   // 90° (Q channel LO)
 
-// --- Frequency Limits ---
-#define MIN_LO_FREQ_HZ       330000UL    // 330 kHz (VCO min 600 MHz / max divider 1800)
-#define MAX_LO_FREQ_HZ       150000000UL // 150 MHz
+
+
+// --- Frequency Limits (Si5351 drives 74HC4052 S0/S1 directly, no ÷4 counter) ---
+// Si5351 VCO range: 600–900 MHz, divider range: 6–1800
+// Max: 900 MHz / 6 = 150 MHz (Si5351 multisynth limit)
+// Min: 600 MHz / 1800 = 333 kHz
+#define MIN_LO_FREQ_HZ       333000UL    // 333 kHz minimum
+#define MAX_LO_FREQ_HZ       150000000UL // 150 MHz maximum
 
 // --- Default Frequencies ---
-#define DEFAULT_LO_FREQ_HZ  11052000UL   // 11.052 MHz (test transmitter)
+#define DEFAULT_LO_FREQ_HZ  11059000UL   // 11.059 MHz beacon
 #define SI5351_XTAL_CORRECTION  0L  // Crystal frequency correction (tune with known frequency source)
 
 // Default I2S digital gain (applied before 32→16 bit conversion)

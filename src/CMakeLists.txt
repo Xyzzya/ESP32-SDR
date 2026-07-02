@@ -6,6 +6,7 @@ idf_component_register(
         "usb_audio.c"
         "usb_descriptors.c"
         "serial_cmd.c"
+
     INCLUDE_DIRS
         "../include"
     REQUIRES

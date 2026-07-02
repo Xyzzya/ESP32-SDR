@@ -35,16 +35,8 @@ bool usb_audio_write(const int16_t *samples, size_t frames) {
     return tud_audio_write(samples, (uint16_t)(frames * USB_AUDIO_CHANNELS * USB_AUDIO_BYTES_PER_SAMPLE)) > 0;
 }
 
-void usb_audio_task(void) {
-    // TinyUSB task is handled internally by esp_tinyusb
-}
-
 bool usb_audio_is_streaming(void) {
     return __atomic_load_n(&_host_streaming, __ATOMIC_ACQUIRE);
-}
-
-bool usb_audio_is_text_ok(void) {
-    return true;  // CDC and Audio are on separate interfaces
 }
 
 // ============================================================================

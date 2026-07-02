@@ -5,7 +5,7 @@
 //   1. Si5351 generates quadrature LO (CLK0 + CLK1) for 74HC4052 mux
 //   2. PCM1808 ADC captures I/Q baseband audio via I2S (ESP32 is master)
 //   3. USB Audio Class 2.0 (UAC2) streams I/Q to host as a USB microphone
-//   4. USB CDC serial provides frequency control (Web Serial compatible)
+//   4. USB CDC serial provides frequency control
 //
 // Data flow:
 //   RF antenna → Tayloe mixer (74HC4052) → RC integrators → PCM1808 →
@@ -29,6 +29,7 @@
 #include "usb_audio.h"
 #include "serial_cmd.h"
 
+
 static const char *TAG = "sdr_main";
 
 // ---- Audio Pipeline Buffers ----
@@ -39,7 +40,7 @@ static int16_t  usb_out_buf[AUDIO_CHUNK_FRAMES * 2];
 
 // ---- Current State ----
 static uint32_t current_freq_hz = DEFAULT_LO_FREQ_HZ;
-static int      debug_level = 1;  // 0=off, 1=stats, 2=verbose
+static int      debug_level = 0;  // 0=off, 1=stats, 2=verbose
 
 // ---- I2S Digital Gain ----
 // Written from cmd_task (core 0), read from audio_task (core 1).
@@ -247,6 +248,9 @@ static void audio_task(void *arg) {
                     bool wrote = usb_audio_write(usb_out_buf, frames);
                     if (wrote) stats_chunks++; else stats_drops++;
 
+                    // Yield to prevent TWDT starvation of the idle task
+                    vTaskDelay(pdMS_TO_TICKS(1));
+
                     // --- Stats reporting every ~1 second ---
                     int64_t now_us = esp_timer_get_time();
                     int64_t elapsed_us = now_us - stats_start_us;
@@ -255,16 +259,12 @@ static void audio_task(void *arg) {
                         float rate_kfps = (float)stats_chunks * (float)AUDIO_CHUNK_FRAMES / elapsed_s / 1000.0f;
 
                         int64_t dc_i = acc_frames > 0 ? acc_dc_i / (int64_t)acc_frames : 0;
-                        float peak_mv_i = (float)acc_peak_i / (float)0x400000 * 1500.0f;
-                        float dc_mv_i   = (float)dc_i       / (float)0x400000 * 1500.0f;
-                        float peak_mv_q = (float)acc_peak_q / (float)0x400000 * 1500.0f;
+                        float peak_mv_i = (float)acc_peak_i / (float)0x800000 * 1500.0f;
+                        float dc_mv_i   = (float)dc_i       / (float)0x800000 * 1500.0f;
+                        float peak_mv_q = (float)acc_peak_q / (float)0x800000 * 1500.0f;
 
-                        // UART0 log every 5s, CDC every 1s
-                        static int stat_round = 0;
-                        if (++stat_round % 5 == 0) {
-                            ESP_LOGI(TAG, "I2S: %.1fkfps I-dc=%+.1fmV I-pk=%.1fmV Q-pk=%.1fmV drops=%lu",
-                                     rate_kfps, dc_mv_i, peak_mv_i, peak_mv_q, (unsigned long)stats_drops);
-                        }
+                        // Stats go to CDC only — UART TX radiates RF noise
+                        // that appears as periodic spikes in the waterfall.
 
                         if (debug_level >= 1 && tud_cdc_connected()) {
                             char buf[120];
@@ -328,6 +328,8 @@ static void cmd_task(void *arg) {
     }
 }
 
+
+
 // ============================================================================
 // app_main — Entry Point
 // ============================================================================
@@ -387,7 +389,10 @@ void app_main(void) {
     ESP_LOGI(TAG, "Commands: f<Hz>, F<kHz>, A 0/1, T<Hz>/T 0, D 0-2, G<n>, ?");
     ESP_LOGI(TAG, "Audio: Host selects 'ESP32 SDR Receiver' as input device");
 
+
+
     // ---- Launch FreeRTOS Tasks ----
-    xTaskCreatePinnedToCore(audio_task, "audio", 4096, NULL, 5, NULL, 1);
-    xTaskCreatePinnedToCore(cmd_task,   "cmd",   4096, NULL, 3, NULL, 0);
+    xTaskCreatePinnedToCore(audio_task,   "audio",   4096, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(cmd_task,     "cmd",     4096, NULL, 3, NULL, 0);
+
 }
